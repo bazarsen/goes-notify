@@ -3,7 +3,7 @@
 # Note: for setting up email with sendmail, see: http://linuxconfig.org/configuring-gmail-as-sendmail-email-relay
 
 import argparse
-import commands
+#import commands
 import json
 import logging
 import smtplib
@@ -22,6 +22,9 @@ from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from math import log
 
+import telegram_send
+
+
 EMAIL_TEMPLATE = """
 <p>Good news! New Global Entry appointment(s) available on the following dates:</p>
 %s
@@ -36,22 +39,25 @@ def notify_send_email(dates, current_apt, settings, use_gmail=False):
 
     try:
         if use_gmail:
-            password = settings.get('gmail_password')
-            if not password:
-                logging.warning('Trying to send from gmail, but password was not provided.')
-                return
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login(sender, password)
+            print('I am here')
+
+            #password = settings.get('gmail_password')
+            #if not password:
+            #    logging.warning('Trying to send from gmail, but password was not provided.')
+            #    return
+            #server = smtplib.SMTP('smtp.gmail.com', 587)
+            #server.starttls()
+            #server.login(sender, password)
         else:
-            username = settings.get('email_username').encode('utf-8')
-            password = settings.get('email_password').encode('utf-8')
-            server = smtplib.SMTP(settings.get('email_server'), settings.get('email_port'))
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            if username:
-                    server.login(username, password)
+            print('I am there')
+            #username = settings.get('email_username').encode('utf-8')
+            #password = settings.get('email_password').encode('utf-8')
+            #server = smtplib.SMTP(settings.get('email_server'), settings.get('email_port'))
+            #server.ehlo()
+            #server.starttls()
+            #server.ehlo()
+            #if username:
+            #        server.login(username, password)
 
         subject = "Alert: Global Entry interview openings are available"
 
@@ -71,14 +77,18 @@ def notify_send_email(dates, current_apt, settings, use_gmail=False):
         msg['content-type'] = "text/html"
         msg.attach(MIMEText(message, 'html'))
 
+        #telegram_send.send(messages=[msg])
+        #telegram_send.send(messages=[dates])
+
         server.sendmail(sender, recipient, msg.as_string())
         server.quit()
+        
     except Exception:
         logging.exception('Failed to send succcess e-mail.')
         log(e)
 
-def notify_osx(msg):
-    commands.getstatusoutput("osascript -e 'display notification \"%s\" with title \"Global Entry Notifier\"'" % msg)
+#def notify_osx(msg):
+    #commands.getstatusoutput("osascript -e 'display notification \"%s\" with title \"Global Entry Notifier\"'" % msg)
 
 def notify_sms(settings, dates):
     for avail_apt in dates: 
@@ -102,6 +112,7 @@ def notify_sms(settings, dates):
         logging.getLogger('twilio').setLevel(logging.WARNING)
         client = Client(account_sid, auth_token)
         body = 'New GOES appointment available on %s' % avail_apt
+        #telegram_send.send(messages=[body])
         logging.info('Sending SMS.')
         client.messages.create(body=body, to=to_number, from_=from_number)
 
@@ -109,7 +120,7 @@ def main(settings):
     try:
         # obtain the json from the web url
         data = requests.get(GOES_URL_FORMAT.format(settings['enrollment_location_id'])).json()
-
+        print(data)
     	# parse the json
         if not data:
             logging.info('No tests available.')
@@ -125,11 +136,14 @@ def main(settings):
                     dates.append(dtp.strftime('%A, %B %d @ %I:%M%p'))
 
         if not dates:
+            print('Wow')
             return
-
-        hash = hashlib.md5(''.join(dates) + current_apt.strftime('%B %d, %Y @ %I:%M%p')).hexdigest()
+        
+        hash = (''.join(dates) + current_apt.strftime('%B %d, %Y @ %I:%M%p'))
         fn = "goes-notify_{0}.txt".format(hash)
         if settings.get('no_spamming') and os.path.exists(fn):
+            print('This?')
+            telegram_send.send(messages=[hash])
             return
         else:
             for f in glob.glob("goes-notify_*.txt"):
@@ -143,13 +157,16 @@ def main(settings):
 
     msg = 'Found new appointment(s) in location %s on %s (current is on %s)!' % (settings.get("enrollment_location_id"), dates[0], current_apt.strftime('%B %d, %Y @ %I:%M%p'))
     logging.info(msg + (' Sending email.' if not settings.get('no_email') else ' Not sending email.'))
+    telegram_send.send(messages=[msg])
 
-    if settings.get('notify_osx'):
-        notify_osx(msg)
-    if not settings.get('no_email'):
-        notify_send_email(dates, current_apt, settings, use_gmail=settings.get('use_gmail'))
-    if settings.get('twilio_account_sid'):
-        notify_sms(settings, dates)
+    
+    #if settings.get('notify_osx'):
+    #    notify_osx(msg)
+    #if not settings.get('no_email'):
+    #    notify_send_email(dates, current_apt, settings, use_gmail=settings.get('use_gmail'))
+    #if settings.get('twilio_account_sid'):
+    #    notify_sms(settings, dates)
+
 
 def _check_settings(config):
     required_settings = (
@@ -182,16 +199,18 @@ if __name__ == '__main__':
     # Parse Arguments
     parser = argparse.ArgumentParser(description="Command line script to check for goes openings.")
     parser.add_argument('--config', dest='configfile', default='%s/config.json' % pwd, help='Config file to use (default is config.json)')
+   ###### parser.add_argument('--config', dest='configfile', default='%s/Users/nbudaiev/GitHub/goes-notify/config.json' % pwd, help='Config file to use (default is config.json)')
     arguments = vars(parser.parse_args())
     logging.info("config file is:" + arguments['configfile'])
     # Load Settings
     try:
         with open(arguments['configfile']) as json_file:
+            telegram_send.send(messages=["Looking for appointments"])
             settings = json.load(json_file)
 
             # merge args into settings IF they're True
-            for key, val in arguments.iteritems():
-                if not arguments.get(key): continue
+            for key, val in arguments.items(): #iter(dictview)
+                if not arguments.get(key): continue 
                 settings[key] = val
 
             settings['configfile'] = arguments['configfile']
@@ -206,6 +225,7 @@ if __name__ == '__main__':
         handler.setFormatter(logging.Formatter('%(levelname)s: %(asctime)s %(message)s'))
         handler.setLevel(logging.DEBUG)
         logging.getLogger('').addHandler(handler)
+        
 
     logging.debug('Running cron with arguments: %s' % arguments)
 
